@@ -1,5 +1,4 @@
 ﻿using System.Collections.Generic;
-using Waterfall.EffectControllers;
 
 namespace Waterfall
 {
@@ -13,20 +12,32 @@ namespace Waterfall
     /// </summary>
     public const string LegacyControllerTypeNodeName = "linkedTo";
 
-    public    string            name = "unnamedController";
-    public    bool              overridden;
-    public    float             overrideValue;
-    protected float             value;
+    [Persistent] public string name = "unnamedController";
+    public bool overridden;
+    public float overrideValue;
+    protected float value;
     protected ModuleWaterfallFX parentModule;
+
+    public WaterfallController() { }
+    public WaterfallController(ConfigNode node) : this()
+    {
+      ConfigNode.LoadObjectFromConfig(this, node);
+    }
+
+    /// <summary>
+    /// Get and store the value of the controller.  Consumers should call Get() to retrieve the data.
+    /// </summary>
+    public abstract void Update();
 
     /// <summary>
     ///   Get the value of the controller.
     /// </summary>
     /// <returns></returns>
-    public virtual List<float> Get() =>
-      overridden
-        ? new List<float>() { overrideValue }
-        : new List<float>() { 0f };
+    public virtual void Get(List<float> output)
+    {
+      output.Clear();
+      output.Add(overridden ? overrideValue : value);
+    }
 
     /// <summary>
     ///   Saves the controller
@@ -34,9 +45,7 @@ namespace Waterfall
     /// <param name="host"></param>
     public virtual ConfigNode Save()
     {
-      var c = new ConfigNode(EffectControllersMetadata.GetConfigNodeName(GetType()));
-      c.AddValue(nameof(name), name);
-      return c;
+      return ConfigNode.CreateConfigFromObject(this);
     }
 
     /// <summary>

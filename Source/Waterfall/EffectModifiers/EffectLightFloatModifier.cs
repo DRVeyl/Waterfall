@@ -8,33 +8,22 @@ namespace Waterfall
   /// </summary>
   public class EffectLightFloatModifier : EffectModifier
   {
-    public string floatName = "";
-
-    public FloatCurve curve;
-
+    [Persistent] public string floatName = "";
+    public FloatCurve curve = new();
     private Light[] l;
+    public override bool ValidForIntegrator => !string.IsNullOrEmpty(floatName);
 
-    public EffectLightFloatModifier()
+    public EffectLightFloatModifier() : base()
     {
-      curve = new();
-
       modifierTypeName = "Light Float";
     }
 
-    public EffectLightFloatModifier(ConfigNode node)
-    {
-      Load(node);
-    }
+    public EffectLightFloatModifier(ConfigNode node) : base(node) { }
 
     public override void Load(ConfigNode node)
     {
       base.Load(node);
-
-      node.TryGetValue("floatName", ref floatName);
-      curve = new();
       curve.Load(node.GetNode("floatCurve"));
-
-      modifierTypeName = "Light Float";
     }
 
     public override ConfigNode Save()
@@ -42,8 +31,6 @@ namespace Waterfall
       var node = base.Save();
 
       node.name = WaterfallConstants.LightFloatModifierNodeName;
-      node.AddValue("floatName", floatName);
-
       node.AddNode(Utils.SerializeFloatCurve("floatCurve", curve));
       return node;
     }
@@ -58,25 +45,22 @@ namespace Waterfall
       }
     }
 
-    public List<float> Get(List<float> strengthList)
+    public List<float> Get(List<float> input, List<float> output)
     {
-      var floatList = new List<float>();
-      if (strengthList.Count > 1)
+      output.Clear();
+      if (input.Count > 1)
       {
         for (int i = 0; i < l.Length; i++)
-        {
-          floatList.Add(curve.Evaluate(strengthList[i]) + randomValue);
-        }
+          output.Add(curve.Evaluate(input[i]) + randomValue);
       }
       else
       {
+        float data = curve.Evaluate(input[0]);
         for (int i = 0; i < l.Length; i++)
-        {
-          floatList.Add(curve.Evaluate(strengthList[0]) + randomValue);
-        }
+          output.Add(data + randomValue);
       }
 
-      return floatList;
+      return output;
     }
 
     public Light GetLight() => l[0];
@@ -86,5 +70,9 @@ namespace Waterfall
       floatName = newFloatName;
       parentEffect.ModifierParameterChange(this);
     }
+
+    public override bool IntegratorSuitable(EffectIntegrator integrator) => integrator is EffectLightFloatIntegrator i && i.floatName == floatName && integrator.transformName == transformName;
+
+    public override EffectIntegrator CreateIntegrator() => new EffectLightFloatIntegrator(parentEffect, this);
   }
 }

@@ -19,31 +19,22 @@ namespace Waterfall
   [DisplayName("Custom (Pull)")]
   public class CustomPullController : WaterfallController
   {
-    public string engineID   = String.Empty;
-    public string memberName = "currentThrottle"; // There is ThrottleController for that, but works as an example
+    [Persistent] public string engineID   = String.Empty;
+    [Persistent] public string memberName = "currentThrottle"; // There is ThrottleController for that, but works as an example
 
-    public float minInputValue;
-    public float maxInputValue = 1;
+    [Persistent] public float minInputValue;
+    [Persistent] public float maxInputValue = 1;
 
-    public  float responseRateUp;
-    public  float responseRateDown;
+    [Persistent] public float responseRateUp;
+    [Persistent] public float responseRateDown;
     private float currentValue;
 
     private ModuleEngines engineController;
     private Func<float>   pullValueMethod = () => 0;
 
-    public CustomPullController() { }
+    public CustomPullController() : base() { }
 
-    public CustomPullController(ConfigNode node)
-    {
-      node.TryGetValue(nameof(name),             ref name);
-      node.TryGetValue(nameof(engineID),         ref engineID);
-      node.TryGetValue(nameof(memberName),       ref memberName);
-      node.TryGetValue(nameof(minInputValue),    ref minInputValue);
-      node.TryGetValue(nameof(maxInputValue),    ref maxInputValue);
-      node.TryGetValue(nameof(responseRateUp),   ref responseRateUp);
-      node.TryGetValue(nameof(responseRateDown), ref responseRateDown);
-    }
+    public CustomPullController(ConfigNode node) : base(node) { }
 
     public override void Initialize(ModuleWaterfallFX host)
     {
@@ -53,7 +44,7 @@ namespace Waterfall
       if (engineController == null)
       {
         Utils.Log($"[{nameof(CustomPullController)}]: Could not find engine ID {engineID}, using first module if available");
-        engineController = host.GetComponent<ModuleEngines>();
+        engineController = host.part.FindModuleImplementing<ModuleEngines>();
       }
 
       if (engineController == null)
@@ -92,39 +83,20 @@ namespace Waterfall
       return () => 0;
     }
 
-    public override ConfigNode Save()
+    public override void Update()
     {
-      var node = base.Save();
-
-      node.AddValue(nameof(engineID),         engineID);
-      node.AddValue(nameof(memberName),       memberName);
-      node.AddValue(nameof(minInputValue),    minInputValue);
-      node.AddValue(nameof(maxInputValue),    maxInputValue);
-      node.AddValue(nameof(responseRateUp),   responseRateUp);
-      node.AddValue(nameof(responseRateDown), responseRateDown);
-
-      return node;
-    }
-
-    public override List<float> Get()
-    {
-      if (overridden)
+      if (!overridden)
       {
-        return new() { overrideValue };
+        float newValue = Mathf.InverseLerp(minInputValue, maxInputValue, GetValue());
+        float responseRate = newValue > currentValue
+          ? responseRateUp
+          : responseRateDown;
+
+        currentValue = responseRate > 0
+          ? Mathf.MoveTowards(currentValue, newValue, responseRate * TimeWarp.deltaTime)
+          : newValue;
       }
-
-      // If zero response rate - do no smoothing
-
-      float newValue = Mathf.InverseLerp(minInputValue, maxInputValue, GetValue());
-      float responseRate = newValue > currentValue
-        ? responseRateUp
-        : responseRateDown;
-
-      currentValue = responseRate > 0
-        ? Mathf.MoveTowards(currentValue, newValue, responseRate * TimeWarp.deltaTime)
-        : newValue;
-
-      return new() { currentValue };
+      value = currentValue;
     }
 
     private float GetValue()

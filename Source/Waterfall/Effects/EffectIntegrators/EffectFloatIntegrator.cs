@@ -1,133 +1,158 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using Unity.Profiling;
 using UnityEngine;
 
 namespace Waterfall
 {
-  public class EffectIntegrator
+  public abstract class EffectIntegrator
   {
-    public    string          transformName;
+    public string transformName;
     protected WaterfallEffect parentEffect;
-    protected List<Transform> xforms;
+    protected List<Transform> xforms = new();
+    protected List<float> controllerData = new();
+    public List<EffectModifier> handledModifiers = new();
+    public virtual void AddModifier(EffectModifier mod) => handledModifiers.Add(mod);
+    public virtual void RemoveModifier(EffectModifier mod) => handledModifiers.Remove(mod);
+
+    public EffectIntegrator(WaterfallEffect effect, EffectModifier mod)
+    {
+      Utils.Log($"[EffectIntegrator]: Initializing integrator for {effect.name} on modifier {mod.fxName}", LogType.Modifiers);
+      transformName = mod.transformName;
+      parentEffect = effect;
+
+      var roots = parentEffect.GetModelTransforms();
+      foreach (var t in roots)
+      {
+        if (t.FindDeepChild(transformName) is Transform t1 && t1 != null)
+          xforms.Add(t1);
+        else
+          Utils.LogError($"[EffectIntegrator]: Unable to find transform {mod.transformName} on modifier {mod.fxName}");
+      }
+
+      handledModifiers.Add(mod);
+    }
+
+    public abstract void Update();
+
+    public void Integrate(EffectModifierMode mode, List<float> items, List<float> modifiers)
+    {
+      int count = Math.Min(items.Count, modifiers.Count);
+      for (int i = 0; i < count; i++)
+        items[i] = mode switch
+        {
+          EffectModifierMode.REPLACE => modifiers[i],
+          EffectModifierMode.MULTIPLY => items[i] * modifiers[i],
+          EffectModifierMode.ADD => items[i] + modifiers[i],
+          EffectModifierMode.SUBTRACT => items[i] - modifiers[i],
+          _ => items[i]
+        };
+    }
+    public void Integrate(EffectModifierMode mode, List<Vector3> items, List<Vector3> modifiers)
+    {
+      int count = Math.Min(items.Count, modifiers.Count);
+      for (int i = 0; i < count; i++)
+        items[i] = mode switch
+        {
+          EffectModifierMode.REPLACE => modifiers[i],
+          EffectModifierMode.MULTIPLY => Vector3.Scale(items[i], modifiers[i]),
+          EffectModifierMode.ADD => items[i] + modifiers[i],
+          EffectModifierMode.SUBTRACT => items[i] - modifiers[i],
+          _ => items[i]
+        };
+    }
+    public void Integrate(EffectModifierMode mode, List<Color> items, List<Color> modifiers)
+    {
+      int count = Math.Min(items.Count, modifiers.Count);
+      for (int i = 0; i < count; i++)
+        items[i] = mode switch
+        {
+          EffectModifierMode.REPLACE => modifiers[i],
+          EffectModifierMode.MULTIPLY => items[i] * modifiers[i],
+          EffectModifierMode.ADD => items[i] + modifiers[i],
+          EffectModifierMode.SUBTRACT => items[i] - modifiers[i],
+          _ => items[i]
+        };
+    }
   }
 
   public class EffectFloatIntegrator : EffectIntegrator
   {
-    public string                    floatName;
-    public List<EffectFloatModifier> handledModifiers;
+    public string floatName;
+    protected readonly List<float> modifierData = new();
+    protected readonly List<float> initialValues = new();
+    protected readonly List<float> workingValues = new();
 
-    private readonly Material[] m;
     private readonly Renderer[] r;
-
-    private readonly List<float> initialFloatValues;
 
     private readonly bool testIntensity;
 
-    public EffectFloatIntegrator(WaterfallEffect effect, EffectFloatModifier floatMod)
+    public EffectFloatIntegrator(WaterfallEffect effect, EffectFloatModifier floatMod) : base(effect, floatMod)
     {
-      Utils.Log(String.Format("[EffectFloatIntegrator]: Initializing integrator for {0} on modifier {1}", effect.name, floatMod.fxName), LogType.Modifiers);
-      xforms        = new();
-      transformName = floatMod.transformName;
-      parentEffect  = effect;
-      var roots = parentEffect.GetModelTransforms();
-      foreach (var t in roots)
-      {
-        var t1 = t.FindDeepChild(transformName);
-        if (t1 == null)
-        {
-          Utils.LogError(String.Format("[EffectFloatIntegrator]: Unable to find transform {0} on modifier {1}", transformName, floatMod.fxName));
-        }
-        else
-        {
-          xforms.Add(t1);
-        }
-      }
-
-
       // float specific
       floatName        = floatMod.floatName;
-      handledModifiers = new();
-      handledModifiers.Add(floatMod);
+      testIntensity = WaterfallConstants.ShaderPropertyHideFloatNames.Contains(floatName);
 
-
-      foreach (string nm in WaterfallConstants.ShaderPropertyHideFloatNames)
-      {
-        if (floatName == nm)
-          testIntensity = true;
-      }
-
-      initialFloatValues = new();
-      m                  = new Material[xforms.Count];
       r                  = new Renderer[xforms.Count];
 
       for (int i = 0; i < xforms.Count; i++)
       {
         r[i] = xforms[i].GetComponent<Renderer>();
-        m[i] = r[i].material;
-        initialFloatValues.Add(m[i].GetFloat(floatName));
+        initialValues.Add(r[i].material.GetFloat(floatName));
       }
     }
 
-    public void AddModifier(EffectFloatModifier newMod)
-    {
-      handledModifiers.Add(newMod);
-    }
+    private static readonly ProfilerMarker s_Update = new ProfilerMarker("Waterfall.FloatIntegrator.Update");
+    private static readonly ProfilerMarker s_ListPrep = new ProfilerMarker("Waterfall.FloatIntegrator.ListPrep");
+    private static readonly ProfilerMarker s_GetControllerValue = new ProfilerMarker("Waterfall.FloatIntegrator.GetControllerValue");
+    private static readonly ProfilerMarker s_GetModifierData = new ProfilerMarker("Waterfall.FloatIntegrator.GetModifierData");
+    private static readonly ProfilerMarker s_Integrate = new ProfilerMarker("Waterfall.FloatIntegrator.Integrate");
+    private static readonly ProfilerMarker s_Apply = new ProfilerMarker("Waterfall.FloatIntegrator.ApplyResult");
 
-    public void RemoveModifier(EffectFloatModifier newMod)
-    {
-      handledModifiers.Remove(newMod);
-    }
-
-    public void Update()
+    public override void Update()
     {
       if (handledModifiers.Count == 0)
         return;
-      var applyValues = initialFloatValues.ToList();
+      s_Update.Begin();
 
-      foreach (var floatMod in handledModifiers)
+      s_ListPrep.Begin();
+      workingValues.Clear();
+      workingValues.AddRange(initialValues);
+      s_ListPrep.End();
+
+      foreach (var mod in handledModifiers)
       {
-        var modResult = floatMod.Get(parentEffect.parentModule.GetControllerValue(floatMod.controllerName));
-
-        if (floatMod.effectMode == EffectModifierMode.REPLACE)
-          applyValues = modResult;
-
-        if (floatMod.effectMode == EffectModifierMode.MULTIPLY)
-          for (int i = 0; i < applyValues.Count; i++)
-            applyValues[i] = applyValues[i] * modResult[i];
-
-        if (floatMod.effectMode == EffectModifierMode.ADD)
-          for (int i = 0; i < applyValues.Count; i++)
-            applyValues[i] = applyValues[i] + modResult[i];
-
-        if (floatMod.effectMode == EffectModifierMode.SUBTRACT)
-          for (int i = 0; i < applyValues.Count; i++)
-            applyValues[i] = applyValues[i] - modResult[i];
+        using (s_GetControllerValue.Auto())
+        {
+          //parentEffect.parentModule.GetControllerValue(mod.controllerName, controllerData);
+          mod.Controller?.Get(controllerData);
+        }
+        List<float> modResult;
+        using (s_GetModifierData.Auto()) { modResult = (mod as EffectFloatModifier).Get(controllerData, modifierData); }
+        using (s_Integrate.Auto())
+        {
+          Integrate(mod.effectMode, workingValues, modResult);
+        }
       }
 
-      for (int i = 0; i < m.Length; i++)
+      s_Apply.Begin();
+      for (int i = 0; i < r.Length; i++)
       {
+        var rend = r[i];
+        float val = workingValues[i];
         if (testIntensity)
         {
-          if (r[i].enabled && applyValues[i] < Settings.MinimumEffectIntensity)
-          {
-            r[i].enabled = false;
-          }
-          else if (!r[i].enabled && applyValues[i] >= Settings.MinimumEffectIntensity)
-          {
-            r[i].enabled = true;
-            m[i].SetFloat(floatName, applyValues[i]);
-          }
-          else if (r[i].enabled && applyValues[i] >= Settings.MinimumEffectIntensity)
-          {
-            m[i].SetFloat(floatName, applyValues[i]);
-          }
+          if (rend.enabled && val < Settings.MinimumEffectIntensity)
+            rend.enabled = false;
+          else if (!rend.enabled && val >= Settings.MinimumEffectIntensity)
+            rend.enabled = true;
         }
-        else
-        {
-          m[i].SetFloat(floatName, applyValues[i]);
-        }
+        if (rend.enabled)
+          rend.material.SetFloat(floatName, val);
       }
+      s_Apply.End();
+      s_Update.End();
     }
   }
 }
