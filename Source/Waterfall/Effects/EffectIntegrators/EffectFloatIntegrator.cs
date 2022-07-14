@@ -105,7 +105,7 @@ namespace Waterfall
         }
         catch (Exception e)
         {
-          Debug.LogError(e.ToString());
+          Utils.LogError($"Material {r[i].material.name} failed to get float {floatName} for modifier {floatMod.fxName} in module {effect.parentModule.moduleID};\n{e}");
         }
       }
     }
