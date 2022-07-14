@@ -73,7 +73,6 @@ namespace Waterfall
       if (Controller == null)
       {
         Utils.LogError($"[EffectModifier]: Controller {controllerName} not found for effect {effect.name}");
-        effect.SetEnabled(false);
       }
 
       randomController = parentEffect.parentModule.AllControllersDict.TryGetValue(randomnessController, out controller) ? controller : null;
