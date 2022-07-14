@@ -33,7 +33,7 @@ namespace Waterfall
 
     public List<WaterfallEffectTemplate> Templates => allTemplates;
 
-    public List<WaterfallController> Controllers => allControllers.Values.ToList();
+    public IEnumerable<WaterfallController> Controllers => allControllers.Values;
     public Dictionary<string, WaterfallController> AllControllersDict => allControllers;
 
     public override void OnAwake()

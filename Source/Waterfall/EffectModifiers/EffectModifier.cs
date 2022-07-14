@@ -70,6 +70,12 @@ namespace Waterfall
     {
       parentEffect = effect;
       Controller = parentEffect.parentModule.AllControllersDict.TryGetValue(controllerName, out var controller) ? controller : null;
+      if (Controller == null)
+      {
+        Utils.LogError($"[EffectModifier]: Controller {controllerName} not found for effect {effect.name}");
+        effect.SetEnabled(false);
+      }
+
       randomController = parentEffect.parentModule.AllControllersDict.TryGetValue(randomnessController, out controller) ? controller : null;
       Utils.Log($"[EffectModifier]: Initializing modifier {fxName}", LogType.Modifiers);
       var roots = parentEffect.GetModelTransforms();
@@ -176,7 +182,7 @@ namespace Waterfall
                          zCurve.Evaluate(input[i]) + randomValue));
         }
       }
-      else
+      else if (input.Count == 1)
       {
         float xVal = xCurve.Evaluate(input[0]);
         float yVal = yCurve.Evaluate(input[0]);

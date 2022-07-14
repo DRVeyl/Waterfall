@@ -21,7 +21,7 @@ namespace Waterfall
       Utils.Log($"[EffectIntegrator]: Initializing integrator for {effect.name} on modifier {mod.fxName}", LogType.Modifiers);
       transformName = mod.transformName;
       parentEffect = effect;
-
+      
       var roots = parentEffect.GetModelTransforms();
       foreach (var t in roots)
       {
@@ -99,7 +99,14 @@ namespace Waterfall
       for (int i = 0; i < xforms.Count; i++)
       {
         r[i] = xforms[i].GetComponent<Renderer>();
-        initialValues.Add(r[i].material.GetFloat(floatName));
+        try
+        {
+          initialValues.Add(r[i].material.GetFloat(floatName));
+        }
+        catch (Exception e)
+        {
+          Debug.LogError(e.ToString());
+        }
       }
     }
 
